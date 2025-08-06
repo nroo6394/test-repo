@@ -1,0 +1,253 @@
+name: PR Validation - Conventional Commits
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  statuses: write
+  checks: write
+
+jobs:
+  validate-commits:
+    runs-on: ubuntu-latest
+    name: Validate Conventional Commits
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Install dependencies
+        run: |
+          npm install --no-save \
+            @commitlint/cli@^19.0.0 \
+            @commitlint/config-conventional@^19.0.0 \
+            semantic-release@^24.0.0 \
+            @semantic-release/commit-analyzer@^13.0.0 \
+            conventional-changelog-conventionalcommits@^8.0.0
+            
+      - name: Configure commitlint
+        run: |
+          cat > commitlint.config.js << 'EOF'
+          module.exports = {
+            extends: ['@commitlint/config-conventional'],
+            rules: {
+              'type-enum': [
+                2,
+                'always',
+                [
+                  'feat',
+                  'fix',
+                  'docs',
+                  'style',
+                  'refactor',
+                  'perf',
+                  'test',
+                  'build',
+                  'ci',
+                  'chore',
+                  'revert'
+                ]
+              ]
+            }
+          };
+          EOF
+          
+      - name: Validate commits and determine release
+        id: validation
+        run: |
+          echo "🔍 Analyzing commits in this PR..."
+          echo ""
+          
+          # Get the base and head SHAs for the PR
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+          
+          # Get all commits in the PR
+          COMMITS=$(git rev-list $BASE_SHA..$HEAD_SHA)
+          
+          # Initialize counters and arrays
+          TOTAL_COMMITS=0
+          VALID_COMMITS=0
+          INVALID_COMMITS=0
+          CONVENTIONAL_TYPES=""
+          
+          # Arrays to store commit info
+          declare -a VALID_COMMIT_MSGS
+          declare -a INVALID_COMMIT_MSGS
+          
+          # Analyze each commit
+          for COMMIT in $COMMITS; do
+            TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
+            COMMIT_MSG=$(git log --format=%s -n 1 $COMMIT)
+            COMMIT_SHORT=$(git log --format=%h -n 1 $COMMIT)
+            
+            # Check if commit follows conventional format
+            if echo "$COMMIT_MSG" | npx commitlint --verbose 2>/dev/null; then
+              VALID_COMMITS=$((VALID_COMMITS + 1))
+              VALID_COMMIT_MSGS+=("✅ $COMMIT_SHORT: $COMMIT_MSG")
+              
+              # Extract commit type for release calculation
+              COMMIT_TYPE=$(echo "$COMMIT_MSG" | sed -n 's/^\([a-z]*\)[(!]*.*/\1/p')
+              if echo "$COMMIT_MSG" | grep -q "!:"; then
+                CONVENTIONAL_TYPES="$CONVENTIONAL_TYPES breaking"
+              else
+                CONVENTIONAL_TYPES="$CONVENTIONAL_TYPES $COMMIT_TYPE"
+              fi
+            else
+              INVALID_COMMITS=$((INVALID_COMMITS + 1))
+              INVALID_COMMIT_MSGS+=("❌ $COMMIT_SHORT: $COMMIT_MSG")
+            fi
+          done
+          
+          # Output summary
+          echo "## 📊 Commit Analysis Summary"
+          echo ""
+          echo "- **Total commits:** $TOTAL_COMMITS"
+          echo "- **Valid conventional commits:** $VALID_COMMITS"
+          echo "- **Invalid commits:** $INVALID_COMMITS"
+          echo ""
+          
+          # Show valid commits
+          if [ $VALID_COMMITS -gt 0 ]; then
+            echo "### ✅ Valid Conventional Commits"
+            echo ""
+            for msg in "${VALID_COMMIT_MSGS[@]}"; do
+              echo "$msg"
+            done
+            echo ""
+          fi
+          
+          # Show invalid commits as warnings
+          if [ $INVALID_COMMITS -gt 0 ]; then
+            echo "### ⚠️ Non-Conventional Commits (Warnings)"
+            echo ""
+            for msg in "${INVALID_COMMIT_MSGS[@]}"; do
+              echo "$msg"
+            done
+            echo ""
+            echo "**💡 Tip:** Consider using conventional commit format for these commits:"
+            echo "- \`feat:\` for new features"
+            echo "- \`fix:\` for bug fixes"
+            echo "- \`docs:\` for documentation changes"
+            echo "- \`perf:\` for performance improvements"
+            echo "- \`refactor:\` for code refactoring"
+            echo "- \`test:\` for test changes"
+            echo "- \`chore:\` for maintenance tasks"
+            echo ""
+          fi
+          
+          # Determine expected release version
+          echo "### 🚀 Expected Release Impact"
+          echo ""
+          
+          if echo "$CONVENTIONAL_TYPES" | grep -q "breaking"; then
+            RELEASE_TYPE="major"
+            echo "**Version Bump:** MAJOR (x.0.0) - Breaking changes detected"
+          elif echo "$CONVENTIONAL_TYPES" | grep -q "feat"; then
+            RELEASE_TYPE="minor"
+            echo "**Version Bump:** MINOR (0.x.0) - New features detected"
+          elif echo "$CONVENTIONAL_TYPES" | grep -E -q "fix|docs|perf|revert"; then
+            RELEASE_TYPE="patch"
+            echo "**Version Bump:** PATCH (0.0.x) - Bug fixes or improvements detected"
+          elif [ $VALID_COMMITS -gt 0 ]; then
+            RELEASE_TYPE="none"
+            echo "**Version Bump:** None - Only non-releasing changes (refactor, test, build, ci, chore, style)"
+          else
+            RELEASE_TYPE="invalid"
+            echo "**Version Bump:** N/A - No valid conventional commits found"
+          fi
+          
+          echo ""
+          
+          # Set outputs for use in next steps
+          echo "valid_commits=$VALID_COMMITS" >> $GITHUB_OUTPUT
+          echo "invalid_commits=$INVALID_COMMITS" >> $GITHUB_OUTPUT
+          echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
+          echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+          
+          # Determine validation result
+          if [ $VALID_COMMITS -eq 0 ]; then
+            echo "## ❌ Validation Failed"
+            echo ""
+            echo "**At least one conventional commit is required to merge this PR.**"
+            echo ""
+            echo "Please add a new commit with a conventional commit message, or amend an existing commit."
+            echo ""
+            echo "📖 Learn more:"
+            echo "- [Conventional Commits Specification](https://www.conventionalcommits.org/)"
+            echo "- [Internal Guide](https://syscobt.atlassian.net/wiki/spaces/DSRE/pages/5481759950/How+to+Conventional+commits+for+Git)"
+            echo ""
+            echo "validation_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "## ✅ Validation Passed"
+            echo ""
+            if [ $INVALID_COMMITS -gt 0 ]; then
+              echo "**Status:** PR can be merged (contains at least one conventional commit)"
+              echo ""
+              echo "⚠️ **Note:** This PR contains $INVALID_COMMITS non-conventional commit(s). While not blocking, we encourage using conventional commits for all changes."
+            else
+              echo "**Status:** All commits follow conventional format! 🎉"
+            fi
+            echo ""
+            echo "validation_status=passed" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Update PR status check
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const validation_status = '${{ steps.validation.outputs.validation_status }}';
+            const valid_commits = '${{ steps.validation.outputs.valid_commits }}';
+            const invalid_commits = '${{ steps.validation.outputs.invalid_commits }}';
+            const total_commits = '${{ steps.validation.outputs.total_commits }}';
+            const release_type = '${{ steps.validation.outputs.release_type }}';
+            
+            // Create status check
+            const status = validation_status === 'passed' ? 'success' : 'failure';
+            
+            let description;
+            if (validation_status === 'passed') {
+              if (invalid_commits > 0) {
+                description = `✅ ${valid_commits}/${total_commits} conventional commits (warnings for ${invalid_commits} commits)`;
+              } else {
+                description = `✅ All ${total_commits} commits are conventional`;
+              }
+              
+              // Add release type to description if applicable
+              if (release_type === 'major') {
+                description += ' | 🚀 Major release';
+              } else if (release_type === 'minor') {
+                description += ' | ✨ Minor release';
+              } else if (release_type === 'patch') {
+                description += ' | 🔧 Patch release';
+              } else if (release_type === 'none') {
+                description += ' | 📦 No release';
+              }
+            } else {
+              description = `❌ No conventional commits found (0/${total_commits})`;
+            }
+            
+            // Update commit status
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: status,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'Conventional Commits Validation'
+            });
