@@ -240,7 +240,7 @@ jobs:
             } else {
               description = `❌ No conventional commits found (0/${total_commits})`;
             }
-            
+          
             // Update commit status
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
