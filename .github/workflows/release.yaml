@@ -32,6 +32,7 @@ jobs:
           node-version: '20'
           
       - name: Configure semantic-release
+      
         run: |
           cat > .releaserc.json << 'EOF'
           {
