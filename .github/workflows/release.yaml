@@ -3,10 +3,10 @@ name: Automated Release
 on:
   push:
     branches:
-      - master
-  pull_request:
-    branches:
-      - master
+      - main
+  # pull_request:
+  #   branches:
+  #     - main
   workflow_dispatch:
 
 permissions:
@@ -101,215 +101,10 @@ jobs:
             @semantic-release/release-notes-generator@^14.0.0 \
             conventional-changelog-conventionalcommits@^8.0.0
 
-      - name: Validate conventional commits (PR only)
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "🔍 Validating conventional commits in PR..."
-          echo ""
-          
-          # Get the base branch commit hash
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
-          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          
-          echo "Base SHA: $BASE_SHA"
-          echo "Head SHA: $HEAD_SHA"
-          echo ""
-          
-          # Get all commits in the PR (excluding merge commits)
-          PR_COMMITS=$(git log --no-merges --pretty=format:"%H|%s" "$BASE_SHA..$HEAD_SHA")
-          
-          if [ -z "$PR_COMMITS" ]; then
-            echo "❌ No commits found in this PR"
-            exit 1
-          fi
-          
-          echo "Commits in this PR:"
-          echo "$PR_COMMITS" | while IFS='|' read -r commit_hash commit_message; do
-            echo "  $(echo $commit_hash | cut -c1-8): $commit_message"
-          done
-          echo ""
-          
-          # Validate each commit message against conventional commit format
-          VALID_COMMITS=0
-          TOTAL_COMMITS=0
-          INVALID_COMMITS=""
-          RELEASE_TYPE="none"
-          
-          echo "$PR_COMMITS" | while IFS='|' read -r commit_hash commit_message; do
-            TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
-            short_hash=$(echo $commit_hash | cut -c1-8)
-            
-            # Check if commit message follows conventional commit format
-            if echo "$commit_message" | grep -qE '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?:\s.+'; then
-              echo "✅ Valid: $short_hash - $commit_message"
-              VALID_COMMITS=$((VALID_COMMITS + 1))
-              
-              # Determine release type (highest priority wins)
-              if echo "$commit_message" | grep -qE '!:\s'; then
-                # Breaking change
-                RELEASE_TYPE="major"
-              elif echo "$commit_message" | grep -qE '^feat(\(.+\))?:\s' && [ "$RELEASE_TYPE" != "major" ]; then
-                # New feature
-                RELEASE_TYPE="minor"
-              elif echo "$commit_message" | grep -qE '^(fix|perf|revert|docs)(\(.+\))?:\s' && [ "$RELEASE_TYPE" = "none" ]; then
-                # Bug fix, performance, revert, or docs
-                RELEASE_TYPE="patch"
-              fi
-            else
-              echo "❌ Invalid: $short_hash - $commit_message"
-              INVALID_COMMITS="$INVALID_COMMITS\n  - $short_hash: $commit_message"
-            fi
-          done
-          
-          # Export results for the next step
-          echo "TOTAL_COMMITS=$(echo "$PR_COMMITS" | wc -l)" >> $GITHUB_ENV
-          echo "VALID_COMMITS=$VALID_COMMITS" >> $GITHUB_ENV
-          echo "RELEASE_TYPE=$RELEASE_TYPE" >> $GITHUB_ENV
-          
-          # Store invalid commits in a file for later use
-          if [ ! -z "$INVALID_COMMITS" ]; then
-            echo -e "$INVALID_COMMITS" > invalid_commits.txt
-          fi
-
-      - name: Predict release version (PR only)
-        if: github.event_name == 'pull_request'
-        run: |
-          echo ""
-          echo "🔮 Release Prediction Analysis..."
-          echo ""
-          
-          # Get the latest tag/version from the repository
-          CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Current version: $CURRENT_VERSION"
-          echo "Release type determined: $RELEASE_TYPE"
-          echo ""
-          
-          # Calculate next version based on release type
-          if [ "$RELEASE_TYPE" = "none" ]; then
-            NEXT_VERSION="No release"
-            RELEASE_EXPLANATION="❌ No release - only non-releasing commits (refactor, test, build, ci, chore, style)"
-          else
-            # Extract version numbers (remove 'v' prefix if present)
-            VERSION_NUMBER=$(echo $CURRENT_VERSION | sed 's/^v//')
-            
-            # Parse version components
-            if echo "$VERSION_NUMBER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
-              MAJOR=$(echo $VERSION_NUMBER | cut -d. -f1)
-              MINOR=$(echo $VERSION_NUMBER | cut -d. -f2)
-              PATCH=$(echo $VERSION_NUMBER | cut -d. -f3)
-            else
-              # Default to 0.0.0 if no valid version found
-              MAJOR=0
-              MINOR=0
-              PATCH=0
-            fi
-            
-            # Calculate next version
-            case $RELEASE_TYPE in
-              "major")
-                MAJOR=$((MAJOR + 1))
-                MINOR=0
-                PATCH=0
-                NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-                RELEASE_EXPLANATION="🚀 Major release - breaking changes detected"
-                ;;
-              "minor")
-                MINOR=$((MINOR + 1))
-                PATCH=0
-                NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-                RELEASE_EXPLANATION="✨ Minor release - new features added"
-                ;;
-              "patch")
-                PATCH=$((PATCH + 1))
-                NEXT_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-                RELEASE_EXPLANATION="🔧 Patch release - bug fixes or improvements"
-                ;;
-            esac
-          fi
-          
-          # Export for next step
-          echo "NEXT_VERSION=$NEXT_VERSION" >> $GITHUB_ENV
-          echo "RELEASE_EXPLANATION=$RELEASE_EXPLANATION" >> $GITHUB_ENV
-
-      - name: Check validation results (PR only)
-        if: github.event_name == 'pull_request'
-        run: |
-          echo ""
-          echo "📊 Validation Results:"
-          echo "  Total commits: $TOTAL_COMMITS"
-          echo "  Valid conventional commits: $VALID_COMMITS"
-          echo "  Invalid commits: $((TOTAL_COMMITS - VALID_COMMITS))"
-          echo ""
-          
-          if [ "$VALID_COMMITS" -eq 0 ]; then
-            echo "❌ PR VALIDATION FAILED"
-            echo ""
-            echo "None of the commits in this PR follow conventional commit format."
-            echo ""
-            echo "Invalid commits:"
-            if [ -f invalid_commits.txt ]; then
-              cat invalid_commits.txt
-            fi
-            echo ""
-            echo "📋 Conventional Commit Format Required:"
-            echo "   feat: description     → Minor release (new features)"
-            echo "   fix: description      → Patch release (bug fixes)"  
-            echo "   docs: description     → Patch release (documentation)"
-            echo "   perf: description     → Patch release (performance)"
-            echo "   feat!: description    → Major release (breaking changes)"
-            echo "   fix!: description     → Major release (breaking changes)"
-            echo ""
-            echo "   Non-releasing types: refactor, test, build, ci, chore, style"
-            echo ""
-            echo "📖 Resources:"
-            echo "   Conventional Commits: https://www.conventionalcommits.org/"
-            echo "   Internal Guide: https://syscobt.atlassian.net/wiki/spaces/DSRE/pages/5481759950/How+to+Conventional+commits+for+Git"
-            echo ""
-            exit 1
-          else
-            echo "✅ PR VALIDATION PASSED"
-            echo ""
-            echo "This PR contains $VALID_COMMITS valid conventional commit(s)."
-            echo ""
-            echo "🎯 RELEASE PREDICTION:"
-            echo "   Current version: $(git describe --tags --abbrev=0 2>/dev/null || echo 'v0.0.0')"
-            echo "   Expected version: $NEXT_VERSION"
-            echo "   $RELEASE_EXPLANATION"
-            echo ""
-            
-            if [ "$RELEASE_TYPE" != "none" ]; then
-              echo "📝 Contributing commits:"
-              # Show which commits will contribute to the release
-              BASE_SHA="${{ github.event.pull_request.base.sha }}"
-              HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-              git log --no-merges --pretty=format:"%h %s" "$BASE_SHA..$HEAD_SHA" | while read line; do
-                commit_message=$(echo "$line" | cut -d' ' -f2-)
-                if echo "$commit_message" | grep -qE '^(feat|fix|docs|perf|revert)(\(.+\))?!?:\s'; then
-                  if echo "$commit_message" | grep -qE '!:\s'; then
-                    echo "   🚨 $line (BREAKING)"
-                  elif echo "$commit_message" | grep -qE '^feat(\(.+\))?:\s'; then
-                    echo "   ✨ $line (feature)"
-                  elif echo "$commit_message" | grep -qE '^(fix|perf|revert|docs)(\(.+\))?:\s'; then
-                    echo "   🔧 $line (fix/improvement)"
-                  fi
-                fi
-              done
-              echo ""
-              
-              if [ $((TOTAL_COMMITS - VALID_COMMITS)) -gt 0 ]; then
-                echo "⚠️  Note: $((TOTAL_COMMITS - VALID_COMMITS)) non-conventional commit(s) will be ignored during release"
-              fi
-            fi
-          fi
-
-      - name: Run semantic-release (master branch only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      - name: Run semantic-release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🚀 Running semantic-release on master branch..."
-          echo ""
-          
           # Run semantic-release with comprehensive logging
           npx semantic-release 2>&1 | tee semantic-release.log
           
@@ -319,11 +114,26 @@ jobs:
           # Check results and provide appropriate feedback
           if grep -q "There are no relevant changes, so no new version is released" semantic-release.log; then
             echo ""
-            echo "ℹ️ No release created - no conventional commits since last release"
+            echo "❌ No release created - commits do not follow conventional commit format"
             echo ""
-            echo "Recent commits analyzed:"
+            echo "📋 Recent commits analyzed:"
             git log --oneline -10 --pretty=format:"%h %s"
             echo ""
+            echo ""
+            echo "💡 Conventional Commit Format Required:"
+            echo "   feat: description     → Minor release (new features)"
+            echo "   fix: description      → Patch release (bug fixes)"
+            echo "   docs: description     → Patch release (documentation)"
+            echo "   perf: description     → Patch release (performance)"
+            echo "   feat!: description    → Major release (breaking changes)"
+            echo "   fix!: description     → Major release (breaking changes)"
+            echo ""
+            echo "   Non-releasing types: refactor, test, build, ci, chore, style"
+            echo ""
+            echo "📖 Conventional Commits: https://www.conventionalcommits.org/"
+            echo "📚 Internal Guide: https://syscobt.atlassian.net/wiki/spaces/DSRE/pages/5481759950/How+to+Conventional+commits+for+Git"
+            echo ""
+            exit 1
           elif [ $SEMANTIC_RELEASE_EXIT_CODE -ne 0 ]; then
             echo ""
             echo "❌ Semantic release failed with exit code $SEMANTIC_RELEASE_EXIT_CODE"
@@ -338,14 +148,14 @@ jobs:
             if grep -q "Published GitHub release" semantic-release.log; then
               RELEASE_URL=$(grep "Published GitHub release" semantic-release.log | sed -n 's/.*Published GitHub release: \(.*\)/\1/p')
               if [ ! -z "$RELEASE_URL" ]; then
-                echo "📦 Release URL: $RELEASE_URL"
+                echo "🚀 Release URL: $RELEASE_URL"
               fi
             fi
             
             if grep -q "Created tag" semantic-release.log; then
               TAG_NAME=$(grep "Created tag" semantic-release.log | sed -n 's/.*Created tag \(.*\)/\1/p')
               if [ ! -z "$TAG_NAME" ]; then
-                echo "🏷️ Tag: $TAG_NAME"
+                echo "🏷️  Tag: $TAG_NAME"
               fi
             fi
             echo ""
