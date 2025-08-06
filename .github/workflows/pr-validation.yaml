@@ -1,11 +1,10 @@
 name: PR Validation - Conventional Commits
 
 on:
-  # pull_request:
-  #   types: [opened, synchronize, reopened]
-  #   branches:
-  #     - main
-  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
 
 permissions:
   contents: read
