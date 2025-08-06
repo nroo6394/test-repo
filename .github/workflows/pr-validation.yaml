@@ -203,7 +203,8 @@ jobs:
             echo ""
             echo "validation_status=passed" >> $GITHUB_OUTPUT
           fi
-          
+    
+    
       - name: Update PR status check
         if: always()
         uses: actions/github-script@v7
