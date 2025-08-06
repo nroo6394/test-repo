@@ -85,6 +85,7 @@ jobs:
           declare -a VALID_COMMIT_MSGS
           declare -a INVALID_COMMIT_MSGS
           
+          
           # Analyze each commit
           for COMMIT in $COMMITS; do
             TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
