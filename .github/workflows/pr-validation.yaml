@@ -1,13 +1,15 @@
 name: PR Validation - Conventional Commits
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches:
-      - main
+  # pull_request:
+  #   types: [opened, synchronize, reopened]
+  #   branches:
+  #     - main
+  workflow_dispatch:
 
 permissions:
   contents: read
+  statuses: write
   checks: write
 
 jobs:
@@ -84,7 +86,6 @@ jobs:
           # Arrays to store commit info
           declare -a VALID_COMMIT_MSGS
           declare -a INVALID_COMMIT_MSGS
-          
           
           # Analyze each commit
           for COMMIT in $COMMITS; do
@@ -204,17 +205,50 @@ jobs:
             echo "validation_status=passed" >> $GITHUB_OUTPUT
           fi
           
-      - name: Create Job Summary
+      - name: Update PR status check
         if: always()
-        run: |
-          {
-            echo "## 📋 Conventional Commits Validation Report"
-            echo ""
-            echo "| Metric | Value |"
-            echo "|--------|-------|"
-            echo "| Total Commits | ${{ steps.validation.outputs.total_commits }} |"
-            echo "| Valid Commits | ${{ steps.validation.outputs.valid_commits }} |"
-            echo "| Invalid Commits | ${{ steps.validation.outputs.invalid_commits }} |"
-            echo "| Expected Release | ${{ steps.validation.outputs.release_type }} |"
-            echo "| Status | ${{ steps.validation.outputs.validation_status }} |"
-          } >> $GITHUB_STEP_SUMMARY
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const validation_status = '${{ steps.validation.outputs.validation_status }}';
+            const valid_commits = '${{ steps.validation.outputs.valid_commits }}';
+            const invalid_commits = '${{ steps.validation.outputs.invalid_commits }}';
+            const total_commits = '${{ steps.validation.outputs.total_commits }}';
+            const release_type = '${{ steps.validation.outputs.release_type }}';
+            
+            // Create status check
+            const status = validation_status === 'passed' ? 'success' : 'failure';
+            
+            let description;
+            if (validation_status === 'passed') {
+              if (invalid_commits > 0) {
+                description = `✅ ${valid_commits}/${total_commits} conventional commits (warnings for ${invalid_commits} commits)`;
+              } else {
+                description = `✅ All ${total_commits} commits are conventional`;
+              }
+              
+              // Add release type to description if applicable
+              if (release_type === 'major') {
+                description += ' | 🚀 Major release';
+              } else if (release_type === 'minor') {
+                description += ' | ✨ Minor release';
+              } else if (release_type === 'patch') {
+                description += ' | 🔧 Patch release';
+              } else if (release_type === 'none') {
+                description += ' | 📦 No release';
+              }
+            } else {
+              description = `❌ No conventional commits found (0/${total_commits})`;
+            }
+            
+            // Update commit status
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: status,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'Conventional Commits Validation'
+            });
