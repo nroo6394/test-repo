@@ -13,9 +13,7 @@ permissions:
 
 jobs:
   validate-commits:
-    runs-on: ubuntu-latest
-    name: Validate Conventional Commits
-    
+    runs-on: ubuntu-latest    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
