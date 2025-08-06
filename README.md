@@ -1,3 +1,2 @@
-#
-test-repo
-test repo
+# Read me file
+Sample addition function
