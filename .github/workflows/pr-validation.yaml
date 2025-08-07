@@ -260,7 +260,7 @@ jobs:
               
               // Add expected version to description
               if (expected_version !== 'N/A' && expected_version !== 'no change') {
-                description += ` | Release: ${expected_version}`;
+                description += ` | New release: ${expected_version}`;
               } else if (expected_version === 'no change') {
                 description += ` | No release`;
               }
