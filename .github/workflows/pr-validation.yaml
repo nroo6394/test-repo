@@ -73,6 +73,15 @@ jobs:
           BASE_SHA=${{ github.event.pull_request.base.sha }}
           HEAD_SHA=${{ github.event.pull_request.head.sha }}
           
+          # Get current version from master branch
+          git checkout $BASE_SHA
+          if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+            CURRENT_VERSION=$(git describe --tags --abbrev=0)
+          else
+            CURRENT_VERSION="none"
+          fi
+          git checkout $HEAD_SHA
+          
           # Get all commits in the PR
           COMMITS=$(git rev-list $BASE_SHA..$HEAD_SHA)
           
@@ -88,9 +97,16 @@ jobs:
           
           # Analyze each commit
           for COMMIT in $COMMITS; do
-            TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
             COMMIT_MSG=$(git log --format=%s -n 1 $COMMIT)
             COMMIT_SHORT=$(git log --format=%h -n 1 $COMMIT)
+            
+            # Skip merge commits (they don't need to follow conventional format)
+            if git cat-file -p $COMMIT | grep -q "^parent.*parent"; then
+              echo "⏭️ Skipping merge commit: $COMMIT_SHORT"
+              continue
+            fi
+            
+            TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
             
             # Check if commit follows conventional format
             if echo "$COMMIT_MSG" | npx commitlint --verbose 2>/dev/null; then
@@ -136,35 +152,48 @@ jobs:
               echo "$msg"
             done
             echo ""
-            echo "**💡 Tip:** Consider using conventional commit format for these commits:"
-            echo "- \`feat:\` for new features"
-            echo "- \`fix:\` for bug fixes"
-            echo "- \`docs:\` for documentation changes"
-            echo "- \`perf:\` for performance improvements"
-            echo "- \`refactor:\` for code refactoring"
-            echo "- \`test:\` for test changes"
-            echo "- \`chore:\` for maintenance tasks"
-            echo ""
           fi
-          
-          # Determine expected release version
-          echo "### 🚀 Expected Release Impact"
-          echo ""
           
           if echo "$CONVENTIONAL_TYPES" | grep -q "breaking"; then
             RELEASE_TYPE="major"
-            echo "**Version Bump:** MAJOR (x.0.0) - Breaking changes detected"
+            if [ "$CURRENT_VERSION" != "none" ]; then
+              MAJOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f1)
+              EXPECTED_VERSION="v$((MAJOR + 1)).0.0"
+              echo "**Version Bump:** MAJOR → $EXPECTED_VERSION"
+            else
+              EXPECTED_VERSION="v1.0.0"
+              echo "**Version Bump:** MAJOR → $EXPECTED_VERSION (first release)"
+            fi
           elif echo "$CONVENTIONAL_TYPES" | grep -q "feat"; then
             RELEASE_TYPE="minor"
-            echo "**Version Bump:** MINOR (0.x.0) - New features detected"
+            if [ "$CURRENT_VERSION" != "none" ]; then
+              MAJOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f1)
+              MINOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f2)
+              EXPECTED_VERSION="v$MAJOR.$((MINOR + 1)).0"
+              echo "**Version Bump:** MINOR → $EXPECTED_VERSION"
+            else
+              EXPECTED_VERSION="v0.1.0"
+              echo "**Version Bump:** MINOR → $EXPECTED_VERSION (first release)"
+            fi
           elif echo "$CONVENTIONAL_TYPES" | grep -E -q "fix|docs|perf|revert"; then
             RELEASE_TYPE="patch"
-            echo "**Version Bump:** PATCH (0.0.x) - Bug fixes or improvements detected"
+            if [ "$CURRENT_VERSION" != "none" ]; then
+              MAJOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f1)
+              MINOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f2)
+              PATCH=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f3)
+              EXPECTED_VERSION="v$MAJOR.$MINOR.$((PATCH + 1))"
+              echo "**Version Bump:** PATCH → $EXPECTED_VERSION"
+            else
+              EXPECTED_VERSION="v0.0.1"
+              echo "**Version Bump:** PATCH → $EXPECTED_VERSION (first release)"
+            fi
           elif [ $VALID_COMMITS -gt 0 ]; then
             RELEASE_TYPE="none"
-            echo "**Version Bump:** None - Only non-releasing changes (refactor, test, build, ci, chore, style)"
+            EXPECTED_VERSION="no change"
+            echo "**Version Bump:** None (refactor, test, build, ci, chore, style)"
           else
             RELEASE_TYPE="invalid"
+            EXPECTED_VERSION="N/A"
             echo "**Version Bump:** N/A - No valid conventional commits found"
           fi
           
@@ -175,6 +204,7 @@ jobs:
           echo "invalid_commits=$INVALID_COMMITS" >> $GITHUB_OUTPUT
           echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
           echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+          echo "expected_version=$EXPECTED_VERSION" >> $GITHUB_OUTPUT
           
           # Determine validation result
           if [ $VALID_COMMITS -eq 0 ]; then
@@ -215,6 +245,7 @@ jobs:
             const invalid_commits = '${{ steps.validation.outputs.invalid_commits }}';
             const total_commits = '${{ steps.validation.outputs.total_commits }}';
             const release_type = '${{ steps.validation.outputs.release_type }}';
+            const expected_version = '${{ steps.validation.outputs.expected_version }}';
             
             // Create status check
             const status = validation_status === 'passed' ? 'success' : 'failure';
@@ -222,25 +253,21 @@ jobs:
             let description;
             if (validation_status === 'passed') {
               if (invalid_commits > 0) {
-                description = `✅ ${valid_commits}/${total_commits} conventional commits (warnings for ${invalid_commits} commits)`;
+                description = `PASS`;
               } else {
-                description = `✅ All ${total_commits} commits are conventional`;
+                description = `PASS`;
               }
               
-              // Add release type to description if applicable
-              if (release_type === 'major') {
-                description += ' | 🚀 Major release';
-              } else if (release_type === 'minor') {
-                description += ' | ✨ Minor release';
-              } else if (release_type === 'patch') {
-                description += ' | 🔧 Patch release';
-              } else if (release_type === 'none') {
-                description += ' | 📦 No release';
+              // Add expected version to description
+              if (expected_version !== 'N/A' && expected_version !== 'no change') {
+                description += ` | New release: ${expected_version}`;
+              } else if (expected_version === 'no change') {
+                description += ` | No release`;
               }
             } else {
-              description = `❌ No conventional commits found (0/${total_commits})`;
+              description = `FAIL: No conventional commits found (0/${total_commits})`;
             }
-            
+          
             // Update commit status
             await github.rest.repos.createCommitStatus({
               owner: context.repo.owner,
