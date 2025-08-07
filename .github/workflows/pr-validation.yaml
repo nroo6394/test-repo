@@ -152,20 +152,7 @@ jobs:
               echo "$msg"
             done
             echo ""
-            echo "**💡 Tip:** Consider using conventional commit format for these commits:"
-            echo "- \`feat:\` for new features"
-            echo "- \`fix:\` for bug fixes"
-            echo "- \`docs:\` for documentation changes"
-            echo "- \`perf:\` for performance improvements"
-            echo "- \`refactor:\` for code refactoring"
-            echo "- \`test:\` for test changes"
-            echo "- \`chore:\` for maintenance tasks"
-            echo ""
           fi
-          
-          # Determine expected release version and calculate next version
-          echo "### 🚀 Expected Release Impact"
-          echo ""
           
           if echo "$CONVENTIONAL_TYPES" | grep -q "breaking"; then
             RELEASE_TYPE="major"
@@ -273,9 +260,9 @@ jobs:
               
               // Add expected version to description
               if (expected_version !== 'N/A' && expected_version !== 'no change') {
-                description += `| Release: ${expected_version}`;
+                description += ` | Release: ${expected_version}`;
               } else if (expected_version === 'no change') {
-                description += `| No release`;
+                description += ` | No release`;
               }
             } else {
               description = `FAIL: No conventional commits found (0/${total_commits})`;
