@@ -266,16 +266,16 @@ jobs:
             let description;
             if (validation_status === 'passed') {
               if (invalid_commits > 0) {
-                description = `PASS: ${valid_commits}/${total_commits} conventional commits (warnings for ${invalid_commits} commits)`;
+                description = `PASS`;
               } else {
-                description = `PASS: All ${total_commits} commits are conventional`;
+                description = `PASS`;
               }
               
               // Add expected version to description
               if (expected_version !== 'N/A' && expected_version !== 'no change') {
-                description += ` | Release: ${expected_version}`;
+                description += `| Release: ${expected_version}`;
               } else if (expected_version === 'no change') {
-                description += ' | No release';
+                description += `| No release`;
               }
             } else {
               description = `FAIL: No conventional commits found (0/${total_commits})`;
