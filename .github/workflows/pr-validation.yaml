@@ -73,108 +73,14 @@ jobs:
           BASE_SHA=${{ github.event.pull_request.base.sha }}
           HEAD_SHA=${{ github.event.pull_request.head.sha }}
           
-          # Get all commits in the PR
-          COMMITS=$(git rev-list $BASE_SHA..$HEAD_SHA)
-          
-          # Initialize counters and arrays
-          TOTAL_COMMITS=0
-          VALID_COMMITS=0
-          INVALID_COMMITS=0
-          CONVENTIONAL_TYPES=""
-          
-          # Arrays to store commit info
-          declare -a VALID_COMMIT_MSGS
-          declare -a INVALID_COMMIT_MSGS
-          
-          # Analyze each commit
-          for COMMIT in $COMMITS; do
-            COMMIT_MSG=$(git log --format=%s -n 1 $COMMIT)
-            COMMIT_SHORT=$(git log --format=%h -n 1 $COMMIT)
-            
-            # Skip merge commits (they don't need to follow conventional format)
-            if git cat-file -p $COMMIT | grep -q "^parent.*parent"; then
-              echo "⏭️ Skipping merge commit: $COMMIT_SHORT"
-              continue
-            fi
-            
-            TOTAL_COMMITS=$((TOTAL_COMMITS + 1))
-            
-            # Check if commit follows conventional format
-            if echo "$COMMIT_MSG" | npx commitlint --verbose 2>/dev/null; then
-              VALID_COMMITS=$((VALID_COMMITS + 1))
-              VALID_COMMIT_MSGS+=("✅ $COMMIT_SHORT: $COMMIT_MSG")
-              
-              # Extract commit type for release calculation
-              COMMIT_TYPE=$(echo "$COMMIT_MSG" | sed -n 's/^\([a-z]*\)[(!]*.*/\1/p')
-              if echo "$COMMIT_MSG" | grep -q "!:"; then
-                CONVENTIONAL_TYPES="$CONVENTIONAL_TYPES breaking"
-              else
-                CONVENTIONAL_TYPES="$CONVENTIONAL_TYPES $COMMIT_TYPE"
-              fi
-            else
-              INVALID_COMMITS=$((INVALID_COMMITS + 1))
-              INVALID_COMMIT_MSGS+=("❌ $COMMIT_SHORT: $COMMIT_MSG")
-            fi
-          done
-          
-          # Output summary
-          echo "## 📊 Commit Analysis Summary"
-          echo ""
-          echo "- **Total commits:** $TOTAL_COMMITS"
-          echo "- **Valid conventional commits:** $VALID_COMMITS"
-          echo "- **Invalid commits:** $INVALID_COMMITS"
-          echo ""
-          
-          # Show valid commits
-          if [ $VALID_COMMITS -gt 0 ]; then
-            echo "### ✅ Valid Conventional Commits"
-            echo ""
-            for msg in "${VALID_COMMIT_MSGS[@]}"; do
-              echo "$msg"
-            done
-            echo ""
-          fi
-          
-          # Show invalid commits as warnings
-          if [ $INVALID_COMMITS -gt 0 ]; then
-            echo "### ⚠️ Non-Conventional Commits (Warnings)"
-            echo ""
-            for msg in "${INVALID_COMMIT_MSGS[@]}"; do
-              echo "$msg"
-            done
-            echo ""
-            echo "**💡 Tip:** Consider using conventional commit format for these commits:"
-            echo "- \`feat:\` for new features"
-            echo "- \`fix:\` for bug fixes"
-            echo "- \`docs:\` for documentation changes"
-            echo "- \`perf:\` for performance improvements"
-            echo "- \`refactor:\` for code refactoring"
-            echo "- \`test:\` for test changes"
-            echo "- \`chore:\` for maintenance tasks"
-            echo ""
-          fi
-          
-      - name: Validate commits and determine release
-        id: validation
-        run: |
-          echo "🔍 Analyzing commits in this PR..."
-          echo ""
-          
-          # Get the base and head SHAs for the PR
-          BASE_SHA=${{ github.event.pull_request.base.sha }}
-          HEAD_SHA=${{ github.event.pull_request.head.sha }}
-          
-          # Get current version from master branch (if any tags exist)
+          # Get current version from master branch
           git checkout $BASE_SHA
           if git describe --tags --abbrev=0 >/dev/null 2>&1; then
             CURRENT_VERSION=$(git describe --tags --abbrev=0)
-            echo "📋 Current version on master: $CURRENT_VERSION"
           else
             CURRENT_VERSION="none"
-            echo "📋 No previous releases found - this will be the first release"
           fi
           git checkout $HEAD_SHA
-          echo ""
           
           # Get all commits in the PR
           COMMITS=$(git rev-list $BASE_SHA..$HEAD_SHA)
@@ -257,61 +163,51 @@ jobs:
             echo ""
           fi
           
-          # Determine expected release version and calculate expected version number
+          # Determine expected release version and calculate next version
           echo "### 🚀 Expected Release Impact"
           echo ""
           
           if echo "$CONVENTIONAL_TYPES" | grep -q "breaking"; then
             RELEASE_TYPE="major"
-            echo "**Version Bump:** MAJOR (x.0.0) - Breaking changes detected"
-            
             if [ "$CURRENT_VERSION" != "none" ]; then
-              # Extract version numbers and increment major
               MAJOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f1)
               EXPECTED_VERSION="v$((MAJOR + 1)).0.0"
-              echo "**Expected Version:** $CURRENT_VERSION → $EXPECTED_VERSION"
+              echo "**Version Bump:** MAJOR → $EXPECTED_VERSION"
             else
-              echo "**Expected Version:** v1.0.0 (first release)"
+              EXPECTED_VERSION="v1.0.0"
+              echo "**Version Bump:** MAJOR → $EXPECTED_VERSION (first release)"
             fi
-            
           elif echo "$CONVENTIONAL_TYPES" | grep -q "feat"; then
             RELEASE_TYPE="minor"
-            echo "**Version Bump:** MINOR (0.x.0) - New features detected"
-            
             if [ "$CURRENT_VERSION" != "none" ]; then
-              # Extract version numbers and increment minor
               MAJOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f1)
               MINOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f2)
               EXPECTED_VERSION="v$MAJOR.$((MINOR + 1)).0"
-              echo "**Expected Version:** $CURRENT_VERSION → $EXPECTED_VERSION"
+              echo "**Version Bump:** MINOR → $EXPECTED_VERSION"
             else
-              echo "**Expected Version:** v0.1.0 (first release)"
+              EXPECTED_VERSION="v0.1.0"
+              echo "**Version Bump:** MINOR → $EXPECTED_VERSION (first release)"
             fi
-            
           elif echo "$CONVENTIONAL_TYPES" | grep -E -q "fix|docs|perf|revert"; then
             RELEASE_TYPE="patch"
-            echo "**Version Bump:** PATCH (0.0.x) - Bug fixes, documentation, or performance improvements detected"
-            
             if [ "$CURRENT_VERSION" != "none" ]; then
-              # Extract version numbers and increment patch
               MAJOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f1)
               MINOR=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f2)
               PATCH=$(echo $CURRENT_VERSION | sed 's/v//' | cut -d. -f3)
               EXPECTED_VERSION="v$MAJOR.$MINOR.$((PATCH + 1))"
-              echo "**Expected Version:** $CURRENT_VERSION → $EXPECTED_VERSION"
+              echo "**Version Bump:** PATCH → $EXPECTED_VERSION"
             else
-              echo "**Expected Version:** v0.0.1 (first release)"
+              EXPECTED_VERSION="v0.0.1"
+              echo "**Version Bump:** PATCH → $EXPECTED_VERSION (first release)"
             fi
-            
           elif [ $VALID_COMMITS -gt 0 ]; then
             RELEASE_TYPE="none"
-            echo "**Version Bump:** None - Only non-releasing changes detected"
-            echo "**Non-releasing types:** refactor, test, build, ci, chore, style"
-            echo "**Expected Version:** $CURRENT_VERSION (no change)"
+            EXPECTED_VERSION="no change"
+            echo "**Version Bump:** None (refactor, test, build, ci, chore, style)"
           else
             RELEASE_TYPE="invalid"
+            EXPECTED_VERSION="N/A"
             echo "**Version Bump:** N/A - No valid conventional commits found"
-            echo "**Expected Version:** N/A"
           fi
           
           echo ""
@@ -321,6 +217,7 @@ jobs:
           echo "invalid_commits=$INVALID_COMMITS" >> $GITHUB_OUTPUT
           echo "total_commits=$TOTAL_COMMITS" >> $GITHUB_OUTPUT
           echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+          echo "expected_version=$EXPECTED_VERSION" >> $GITHUB_OUTPUT
           
           # Determine validation result
           if [ $VALID_COMMITS -eq 0 ]; then
@@ -361,6 +258,7 @@ jobs:
             const invalid_commits = '${{ steps.validation.outputs.invalid_commits }}';
             const total_commits = '${{ steps.validation.outputs.total_commits }}';
             const release_type = '${{ steps.validation.outputs.release_type }}';
+            const expected_version = '${{ steps.validation.outputs.expected_version }}';
             
             // Create status check
             const status = validation_status === 'passed' ? 'success' : 'failure';
@@ -373,14 +271,10 @@ jobs:
                 description = `PASS: All ${total_commits} commits are conventional`;
               }
               
-              // Add release type to description if applicable (using ASCII-safe characters)
-              if (release_type === 'major') {
-                description += ' | Major release';
-              } else if (release_type === 'minor') {
-                description += ' | Minor release';
-              } else if (release_type === 'patch') {
-                description += ' | Patch release';
-              } else if (release_type === 'none') {
+              // Add expected version to description
+              if (expected_version !== 'N/A' && expected_version !== 'no change') {
+                description += ` | Release: ${expected_version}`;
+              } else if (expected_version === 'no change') {
                 description += ' | No release';
               }
             } else {
