@@ -125,7 +125,7 @@ jobs:
               INVALID_COMMIT_MSGS+=("❌ $COMMIT_SHORT: $COMMIT_MSG")
             fi
           done
-          
+
           
           # Output summary
           echo "## 📊 Commit Analysis Summary"
@@ -263,7 +263,7 @@ jobs:
               if (expected_version !== 'N/A' && expected_version !== 'no change') {
                 description += ` | New release: ${expected_version}`;
               } else if (expected_version === 'no change') {
-                description += ` | No release`;
+                description += ` | No new release (Non release type commits only)`;
               }
             } else {
               description = `FAIL: No conventional commits found (0/${total_commits})`;
