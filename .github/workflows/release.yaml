@@ -116,21 +116,10 @@ jobs:
             if grep -q "There are no relevant changes, so no new version is released" semantic-release.log; then
               echo "Workflow completed successfully - No release created"
               echo "This is normal for non-releasing commits (refactor, test, build, ci, chore, style)"
-            else
+            elif grep -q "Published release" semantic-release.log; then
               echo "Workflow completed successfully - Release created"
+            else:
+              echo "Failed - Check logs above"
+              exit 1
             fi
-          elif [ $EXIT_CODE -eq 1 ]; then
-            echo "Workflow completed successfully - No release created"
-            echo "This is normal for non-releasing commits (refactor, test, build, ci, chore, style)"
-            exit 0
-          else
-            echo "Semantic-release FAILED with exit code $EXIT_CODE"
-            echo ""
-            if grep -q "ERELEASEBRANCHES" semantic-release.log; then
-              echo "ERROR: Branch configuration problem"
-              echo "Check that 'main' branch exists and matches your repository's default branch"
-            else
-              echo "Configuration or infrastructure problem - check logs above"
-            fi
-            exit $EXIT_CODE
-          fi
+           fi
