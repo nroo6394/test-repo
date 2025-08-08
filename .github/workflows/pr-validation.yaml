@@ -126,6 +126,7 @@ jobs:
             fi
           done
           
+          
           # Output summary
           echo "## 📊 Commit Analysis Summary"
           echo ""
