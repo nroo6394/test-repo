@@ -12,7 +12,7 @@ permissions:
   pull-requests: write
 
 env:
-  RELEASE_BRANCH: main
+  RELEASE_BRANCH: master
 
 jobs:
   release:
