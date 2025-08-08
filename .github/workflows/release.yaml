@@ -3,7 +3,7 @@ name: Automated Release
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -121,6 +121,10 @@ jobs:
           EXIT_CODE=$?
           
           echo ""
+          echo "🔍 Semantic-release exit code: $EXIT_CODE"
+          echo ""
+          
+          # Handle different exit codes properly
           if [ $EXIT_CODE -eq 0 ]; then
             # Check if a release was actually created
             if git describe --tags --abbrev=0 >/dev/null 2>&1; then
@@ -158,26 +162,54 @@ jobs:
               echo "ℹ️ Semantic-release completed, but no tags were created"
             fi
           elif [ $EXIT_CODE -eq 1 ]; then
-            echo "ℹ️ No release created"
+            echo "ℹ️ No release created - this is normal"
             echo ""
-            echo "🔍 This is normal when:"
+            echo "🔍 This happens when:"
             echo "   • Only non-releasing commits (refactor, test, build, ci, chore, style)"
             echo "   • All changes already included in previous releases"
             echo ""
             echo "📋 Recent commits analyzed:"
             git log --oneline --no-merges -5
             echo ""
-            # Convert to success since this is expected behavior
+            echo "✅ Workflow completed successfully"
+            # Exit 0 - this is expected behavior
             exit 0
           else
-            echo "❌ Semantic-release failed (exit code: $EXIT_CODE)"
+            echo "❌ SEMANTIC-RELEASE CONFIGURATION ERROR (exit code: $EXIT_CODE)"
             echo ""
-            echo "🚨 This is unexpected since PR validation should have caught issues."
-            echo "💡 Possible causes:"
-            echo "   • GITHUB_TOKEN permissions issue"
-            echo "   • Git configuration problem"
-            echo "   • Network/API timeout"
-            echo "   • Semantic-release configuration error"
+            echo "🚨 This indicates a configuration or infrastructure problem:"
             echo ""
+            
+            # Check for common configuration errors
+            if grep -q "ERELEASEBRANCHES" semantic-release.log; then
+              echo "❌ BRANCH CONFIGURATION ERROR:"
+              echo "   • Check that the branch name in .releaserc.json matches your actual branch"
+              echo "   • Current config points to a branch that doesn't exist"
+              echo "   • Common issue: 'master' vs 'main' branch names"
+            elif grep -q "ENOGHTOKEN" semantic-release.log; then
+              echo "❌ GITHUB TOKEN ERROR:"
+              echo "   • Missing or invalid GITHUB_TOKEN"
+              echo "   • Token may lack required permissions"
+            elif grep -q "EINVALIDTAGFORMAT" semantic-release.log; then
+              echo "❌ TAG FORMAT ERROR:"
+              echo "   • Invalid tag format in configuration"
+            elif grep -q "ENOTINHISTORY" semantic-release.log; then
+              echo "❌ GIT HISTORY ERROR:"
+              echo "   • Git history or tag issues"
+            else
+              echo "❌ UNKNOWN ERROR:"
+              echo "   • Check the semantic-release logs above for details"
+            fi
+            
+            echo ""
+            echo "💡 Common fixes:"
+            echo "   • Verify branch configuration in .releaserc.json"
+            echo "   • Check GITHUB_TOKEN permissions"
+            echo "   • Ensure Git history is clean"
+            echo ""
+            echo "📖 See semantic-release docs: https://github.com/semantic-release/semantic-release/blob/master/docs/usage/configuration.md"
+            echo ""
+            
+            # This is a real error - exit with failure
             exit $EXIT_CODE
           fi
