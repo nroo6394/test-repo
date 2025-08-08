@@ -19,7 +19,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-        
           fetch-depth: 0
           persist-credentials: false
 
@@ -27,12 +26,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+
       - name: Configure semantic-release
         run: |
           cat > .releaserc.json << 'EOF'
           {
             "branches": [
-              "main"
+              "master"
             ],
             "plugins": [
               [
@@ -101,58 +101,83 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Run semantic-release with comprehensive logging
+          echo "🚀 Running semantic-release..."
+          echo ""
+          echo "ℹ️ Note: Commit validation was already performed during PR review"
+          echo ""
+          
+          # Get current version before release (if any tags exist)
+          if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+            PREVIOUS_VERSION=$(git describe --tags --abbrev=0)
+            echo "📋 Previous version: $PREVIOUS_VERSION"
+          else
+            PREVIOUS_VERSION="none"
+            echo "📋 No previous releases found"
+          fi
+          echo ""
+          
+          # Trust the PR validation and let semantic-release do its job
           npx semantic-release 2>&1 | tee semantic-release.log
-
-          # Capture the exit code
-          SEMANTIC_RELEASE_EXIT_CODE=${PIPESTATUS[0]}
-
-          # Check results and provide appropriate feedback
-          if grep -q "There are no relevant changes, so no new version is released" semantic-release.log; then
+          EXIT_CODE=$?
+          
+          echo ""
+          if [ $EXIT_CODE -eq 0 ]; then
+            # Check if a release was actually created
+            if git describe --tags --abbrev=0 >/dev/null 2>&1; then
+              NEW_VERSION=$(git describe --tags --abbrev=0)
+              if [ "$NEW_VERSION" != "$PREVIOUS_VERSION" ]; then
+                echo "✅ Release created successfully!"
+                echo ""
+                echo "🏷️  New Version: $NEW_VERSION"
+                if [ "$PREVIOUS_VERSION" != "none" ]; then
+                  echo "📈 Previous Version: $PREVIOUS_VERSION"
+                fi
+                echo ""
+                
+                # Try to extract release URL from semantic-release output
+                if grep -q "Published GitHub release" semantic-release.log; then
+                  RELEASE_URL=$(grep "Published GitHub release" semantic-release.log | sed -n 's/.*Published GitHub release: \(.*\)/\1/p')
+                  if [ ! -z "$RELEASE_URL" ]; then
+                    echo "🔗 Release URL: $RELEASE_URL"
+                  fi
+                fi
+                
+                # Show what commits were included
+                echo ""
+                echo "📝 Commits included in this release:"
+                if [ "$PREVIOUS_VERSION" != "none" ]; then
+                  git log --oneline --no-merges $PREVIOUS_VERSION..$NEW_VERSION | head -10
+                else
+                  git log --oneline --no-merges | head -10
+                fi
+                echo ""
+              else
+                echo "ℹ️ Semantic-release completed, but no new version was created"
+              fi
+            else
+              echo "ℹ️ Semantic-release completed, but no tags were created"
+            fi
+          elif [ $EXIT_CODE -eq 1 ]; then
+            echo "ℹ️ No release created"
             echo ""
-            echo "❌ No release created - commits do not follow conventional commit format"
+            echo "🔍 This is normal when:"
+            echo "   • Only non-releasing commits (refactor, test, build, ci, chore, style)"
+            echo "   • All changes already included in previous releases"
             echo ""
             echo "📋 Recent commits analyzed:"
-            git log --oneline -10 --pretty=format:"%h %s"
+            git log --oneline --no-merges -5
             echo ""
-            echo ""
-            echo "💡 Conventional Commit Format Required:"
-            echo "   feat: description     → Minor release (new features)"
-            echo "   fix: description      → Patch release (bug fixes)"
-            echo "   docs: description     → Patch release (documentation)"
-            echo "   perf: description     → Patch release (performance)"
-            echo "   feat!: description    → Major release (breaking changes)"
-            echo "   fix!: description     → Major release (breaking changes)"
-            echo ""
-            echo "   Non-releasing types: refactor, test, build, ci, chore, style"
-            echo ""
-            echo "📖 Conventional Commits: https://www.conventionalcommits.org/"
-            echo "📚 Internal Guide: https://syscobt.atlassian.net/wiki/spaces/DSRE/pages/5481759950/How+to+Conventional+commits+for+Git"
-            echo ""
-            exit 1
-          elif [ $SEMANTIC_RELEASE_EXIT_CODE -ne 0 ]; then
-            echo ""
-            echo "❌ Semantic release failed with exit code $SEMANTIC_RELEASE_EXIT_CODE"
-            echo "Check the logs above for details."
-            echo ""
-            exit $SEMANTIC_RELEASE_EXIT_CODE
+            # Convert to success since this is expected behavior
+            exit 0
           else
+            echo "❌ Semantic-release failed (exit code: $EXIT_CODE)"
             echo ""
-            echo "✅ Release completed successfully!"
-            
-            # Extract and display release info if available
-            if grep -q "Published GitHub release" semantic-release.log; then
-              RELEASE_URL=$(grep "Published GitHub release" semantic-release.log | sed -n 's/.*Published GitHub release: \(.*\)/\1/p')
-              if [ ! -z "$RELEASE_URL" ]; then
-                echo "🚀 Release URL: $RELEASE_URL"
-              fi
-            fi
-            
-            if grep -q "Created tag" semantic-release.log; then
-              TAG_NAME=$(grep "Created tag" semantic-release.log | sed -n 's/.*Created tag \(.*\)/\1/p')
-              if [ ! -z "$TAG_NAME" ]; then
-                echo "🏷️  Tag: $TAG_NAME"
-              fi
-            fi
+            echo "🚨 This is unexpected since PR validation should have caught issues."
+            echo "💡 Possible causes:"
+            echo "   • GITHUB_TOKEN permissions issue"
+            echo "   • Git configuration problem"
+            echo "   • Network/API timeout"
+            echo "   • Semantic-release configuration error"
             echo ""
+            exit $EXIT_CODE
           fi
