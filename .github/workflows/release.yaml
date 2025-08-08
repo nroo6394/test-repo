@@ -13,7 +13,7 @@ permissions:
 
 env:
   RELEASE_BRANCH: main
-
+  
 jobs:
   release:
     runs-on: ubuntu-latest
