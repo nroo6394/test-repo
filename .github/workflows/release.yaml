@@ -124,7 +124,13 @@ jobs:
             echo "This is normal for non-releasing commits (refactor, test, build, ci, chore, style)"
             exit 0
           else
-            echo "Semantic-release failed with exit code $EXIT_CODE"
-            echo "This indicates a configuration or infrastructure problem"
+            echo "Semantic-release FAILED with exit code $EXIT_CODE"
+            echo ""
+            if grep -q "ERELEASEBRANCHES" semantic-release.log; then
+              echo "ERROR: Branch configuration problem"
+              echo "Check that 'main' branch exists and matches your repository's default branch"
+            else
+              echo "Configuration or infrastructure problem - check logs above"
+            fi
             exit $EXIT_CODE
           fi
