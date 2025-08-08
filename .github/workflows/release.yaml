@@ -118,8 +118,12 @@ jobs:
               echo "This is normal for non-releasing commits (refactor, test, build, ci, chore, style)"
             elif grep -q "Published release" semantic-release.log; then
               echo "Workflow completed successfully - Release created"
-            else:
+            else
               echo "Failed - Check logs above"
               exit 1
             fi
-           fi
+          else
+            echo "Semantic-release failed with exit code $EXIT_CODE"
+            echo "Failed - Check logs above"
+            exit $EXIT_CODE
+          fi
