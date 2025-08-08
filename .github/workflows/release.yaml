@@ -3,7 +3,7 @@ name: Automated Release
 on:
   push:
     branches:
-      - master
+      - main
   workflow_dispatch:
 
 permissions:
@@ -185,7 +185,6 @@ jobs:
               echo "❌ BRANCH CONFIGURATION ERROR:"
               echo "   • Check that the branch name in .releaserc.json matches your actual branch"
               echo "   • Current config points to a branch that doesn't exist"
-              echo "   • Common issue: 'master' vs 'main' branch names"
             elif grep -q "ENOGHTOKEN" semantic-release.log; then
               echo "❌ GITHUB TOKEN ERROR:"
               echo "   • Missing or invalid GITHUB_TOKEN"
