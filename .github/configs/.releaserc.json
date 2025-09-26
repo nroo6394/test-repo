@@ -1,6 +1,6 @@
 {
   "branches": [
-    "${{ env.RELEASE_BRANCH }}"
+    "__RELEASE_BRANCH__"
   ],
   "plugins": [
     [
