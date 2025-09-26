@@ -32,7 +32,12 @@ jobs:
 
       - name: Configure semantic-release
         run: |
+          echo "RELEASE_BRANCH value: ${RELEASE_BRANCH}"
+          echo "Original config:"
+          cat .github/configs/.releaserc.json
           sed "s|\${{ env.RELEASE_BRANCH }}|${RELEASE_BRANCH}|g" .github/configs/.releaserc.json > .releaserc.json
+          echo "Final config after sed:"
+          cat .releaserc.json
 
       - name: Install semantic-release dependencies
         run: |
