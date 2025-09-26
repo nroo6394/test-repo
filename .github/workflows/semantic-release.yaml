@@ -35,7 +35,8 @@ jobs:
           echo "RELEASE_BRANCH value: ${RELEASE_BRANCH}"
           echo "Original config:"
           cat .github/configs/.releaserc.json
-          sed "s|\${{ env.RELEASE_BRANCH }}|${RELEASE_BRANCH}|g" .github/configs/.releaserc.json > .releaserc.json
+          # Try simple string replacement with sed
+          sed "s/\\\${{ env.RELEASE_BRANCH }}/${RELEASE_BRANCH}/g" .github/configs/.releaserc.json > .releaserc.json
           echo "Final config after sed:"
           cat .releaserc.json
 
