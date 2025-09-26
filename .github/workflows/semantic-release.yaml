@@ -11,8 +11,6 @@ permissions:
   issues: write
   pull-requests: write
 
-env:
-  RELEASE_BRANCH: main
 
 jobs:
   release:
@@ -32,13 +30,7 @@ jobs:
 
       - name: Configure semantic-release
         run: |
-          echo "RELEASE_BRANCH value: ${RELEASE_BRANCH}"
-          echo "Original config:"
-          cat .github/configs/.releaserc.json
-          # Replace simple placeholder with actual branch name
-          sed "s/__RELEASE_BRANCH__/${RELEASE_BRANCH}/g" .github/configs/.releaserc.json > .releaserc.json
-          echo "Final config after sed:"
-          cat .releaserc.json
+          cp .github/configs/.releaserc.json .releaserc.json
 
       - name: Install semantic-release dependencies
         run: |

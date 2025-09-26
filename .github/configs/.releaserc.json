@@ -1,6 +1,6 @@
 {
   "branches": [
-    "__RELEASE_BRANCH__"
+    "main"
   ],
   "plugins": [
     [
